@@ -13,3 +13,7 @@ Hexo 7 + Icarus 6 블로그. `main`에 푸시하면 GitHub Actions가 빌드해 
 - `subtitle`: 글의 종류와 대상. 예) `Computational Life 리뷰와 재현`, `실험 리포트: Bejjani 2025 작은 세계 재현`, `독서 노트: 지능의 기원`.
 - subtitle은 `scripts/subtitle.js`가 제목 아래에 표시한다.
 - 부제에 콜론(:)이 들어가면 작은따옴표로 감싼다. 예) `subtitle: '실험 리포트: Bejjani 2025 작은 세계 재현'`
+
+## 공개 상태
+
+- 사이트는 https://sean-jang00.github.io 에 배포되지만 검색 엔진 색인은 막아 두었다(`scripts/noindex.js`). 알릴 준비가 되면 그 파일을 지우고 푸시한다.
