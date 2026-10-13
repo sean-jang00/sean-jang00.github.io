@@ -1,0 +1,95 @@
+# Icarus 테마 설정. 항목 설명은 https://ppoffice.github.io/hexo-theme-icarus/ 참조.
+# 수익 기능(후원, 광고, 구독 양식)은 넣지 않는다.
+version: 5.1.0
+variant: default
+logo:
+    text: Evolvable Labs
+head:
+    favicon: /img/favicon.svg
+    manifest:
+        name: Evolvable Labs
+        short_name: Evolvable Labs
+        start_url: /
+        theme_color: '#ffffff'
+        background_color: '#ffffff'
+        display: standalone
+        icons: []
+    open_graph:
+        type: blog
+    structured_data: {}
+    meta: []
+    rss: /atom.xml
+navbar:
+    menu:
+        홈: /
+        글 목록: /archives
+        카테고리: /categories
+        태그: /tags
+        소개: /about
+    links:
+        RSS:
+            icon: fas fa-rss
+            url: /atom.xml
+footer:
+    copyright: © 2026 Evolvable Labs
+    links: {}
+article:
+    highlight:
+        theme: atom-one-light
+        clipboard: true
+        fold: unfolded
+    readtime: true
+    update_time: auto
+search:
+    type: insight
+    index_pages: true
+sidebar:
+    left:
+        sticky: false
+    right:
+        sticky: true
+widgets:
+    -
+        position: left
+        type: profile
+        author: Evolvable Labs
+        author_title: 인공생명 공부와 재현 실험
+        location:
+        avatar:
+        avatar_rounded: false
+        follow_link:
+        social_links:
+            RSS:
+                icon: fas fa-rss
+                url: /atom.xml
+    -
+        position: right
+        type: toc
+        index: true
+        collapsed: true
+        depth: 3
+    -
+        position: left
+        type: categories
+    -
+        position: left
+        type: recent_posts
+    -
+        position: left
+        type: tags
+        order_by: name
+        amount:
+        show_count: true
+plugins:
+    animejs: false
+    back_to_top: true
+    gallery: true
+    katex: true
+    mathjax: false
+    outdated_browser: false
+    pjax: false
+    progressbar: true
+providers:
+    cdn: jsdelivr
+    fontcdn: google
+    iconcdn: fontawesome

@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>BFF 복제 루프 단계 실행기</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans+KR:wght@400;600&display=swap">
+<style>
+/* Layout: 한 열. 위에 조작 버튼과 레지스터, 가운데 128바이트 테이프 격자(16열 × 8행), 아래에 실행 기록과 설명. */
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --fg: #1d2330;
+  --muted: #5d6676;
+  --line: #d7dbe3;
+  --a-tint: #eef2f8;
+  --b-tint: #f7f1ea;
+  --h0: #2f63d6;
+  --h0-soft: #dbe5fb;
+  --h1: #c47a10;
+  --h1-soft: #f8e7cc;
+  --pc: #1d2330;
+  --write: #c43d5b;
+  --cmd: #1d2330;
+  --noncmd: #9aa2b1;
+  --ok: #2c8a57;
+  --font-ui: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12151b; --surface: #1a1f27; --fg: #e4e8ef; --muted: #98a1b0; --line: #2d3440;
+    --a-tint: #1c2432; --b-tint: #2a231b; --h0: #7aa2ff; --h0-soft: #23345a; --h1: #f0b04a; --h1-soft: #4a3618;
+    --pc: #e4e8ef; --write: #ff7d96; --cmd: #e4e8ef; --noncmd: #66707f; --ok: #5cc98d;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12151b; --surface: #1a1f27; --fg: #e4e8ef; --muted: #98a1b0; --line: #2d3440;
+  --a-tint: #1c2432; --b-tint: #2a231b; --h0: #7aa2ff; --h0-soft: #23345a; --h1: #f0b04a; --h1-soft: #4a3618;
+  --pc: #e4e8ef; --write: #ff7d96; --cmd: #e4e8ef; --noncmd: #66707f; --ok: #5cc98d;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-ui); font-size: 15px; line-height: 1.6; }
+.wrap { max-width: 860px; margin: 0 auto; padding-inline: 16px; padding-block: 24px 48px; display: grid; gap: 20px; }
+h1 { font-size: 1.45rem; margin: 0; text-wrap: balance; line-height: 1.3; }
+.lead { margin: 6px 0 0; color: var(--muted); max-width: 65ch; }
+code, .mono { font-family: var(--font-mono); }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; }
+button { font: 600 14px var(--font-ui); padding: 8px 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); cursor: pointer; }
+button.primary { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+button:hover:not(:disabled) { border-color: var(--h0); }
+button:focus-visible { outline: 2px solid var(--h0); outline-offset: 2px; }
+button:disabled { opacity: .45; cursor: default; }
+.regs { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
+.reg { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; min-width: 0; }
+.reg .k { font-size: 12px; color: var(--muted); letter-spacing: .02em; }
+.reg .v { font-family: var(--font-mono); font-size: 18px; font-variant-numeric: tabular-nums; }
+.reg.h0 .v { color: var(--h0); } .reg.h1 .v { color: var(--h1); }
+.now { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; min-height: 76px; }
+.now .k { font-size: 12px; color: var(--muted); }
+.now .t { margin-top: 2px; }
+.tapes { display: grid; gap: 14px; }
+.region-head { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+.region-head b { color: var(--fg); font-weight: 600; }
+.grid { display: grid; grid-template-columns: repeat(16, minmax(0, 1fr)); gap: 3px; }
+.cell { position: relative; aspect-ratio: 1 / 1.25; border-radius: 4px; display: grid; place-items: center; font-family: var(--font-mono); font-size: clamp(10px, 2.2vw, 15px); border: 1px solid transparent; }
+.A .cell { background: var(--a-tint); } .B .cell { background: var(--b-tint); }
+.cell .idx { position: absolute; top: 1px; left: 3px; font-size: 8px; color: var(--muted); line-height: 1; }
+.cell.cmd { color: var(--cmd); font-weight: 600; }
+.cell.non { color: var(--noncmd); font-size: clamp(8px, 1.6vw, 11px); }
+.cell.isH0 { background: var(--h0-soft) !important; box-shadow: inset 0 -3px 0 var(--h0); }
+.cell.isH1 { background: var(--h1-soft) !important; box-shadow: inset 0 3px 0 var(--h1); }
+.cell.isH0.isH1 { box-shadow: inset 0 -3px 0 var(--h0), inset 0 3px 0 var(--h1); }
+.cell.isPC { border: 2px solid var(--pc); }
+.cell.wrote { color: var(--write); animation: flash .6s ease-out; }
+@keyframes flash { from { transform: scale(1.18); } to { transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { .cell.wrote { animation: none; } }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 16px; height: 16px; border-radius: 3px; display: inline-block; }
+.sw.pc { border: 2px solid var(--pc); }
+.sw.h0 { background: var(--h0-soft); box-shadow: inset 0 -3px 0 var(--h0); }
+.sw.h1 { background: var(--h1-soft); box-shadow: inset 0 3px 0 var(--h1); }
+.sw.w { background: var(--surface); border: 1px solid var(--line); position: relative; }
+.sw.w::after { content: "x"; position: absolute; inset: 0; display: grid; place-items: center; font: 600 11px var(--font-mono); color: var(--write); }
+.progress { font-size: 13px; color: var(--muted); }
+.progress b { color: var(--ok); font-variant-numeric: tabular-nums; }
+.cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+@media (max-width: 680px) { .cols { grid-template-columns: minmax(0, 1fr); } }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; min-width: 0; }
+.panel h2 { font-size: 14px; margin: 0 0 8px; }
+.log { font-family: var(--font-mono); font-size: 12.5px; max-height: 260px; overflow-y: auto; display: grid; gap: 2px; }
+.log div { white-space: pre-wrap; word-break: break-word; }
+.log .lap { color: var(--ok); }
+table.ops { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.ops td { padding: 4px 6px; border-top: 1px solid var(--line); vertical-align: top; }
+table.ops td:first-child { font-family: var(--font-mono); font-weight: 600; width: 2.5em; }
+.notes { font-size: 13.5px; color: var(--muted); max-width: 70ch; display: grid; gap: 6px; }
+.notes p { margin: 0; }
+.back { margin: 0 0 10px; font-size: 13.5px; }
+.back a { color: var(--h0); text-decoration: none; }
+.back a:hover { text-decoration: underline; }
+</style>
+<style>body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+
+
+<div class="wrap">
+  <header>
+    <p class="back"><a href="/2026/10/bff-self-replicators/">← 글로 돌아가기: 무작위 바이트에서 생겨난 복제자</a></p>
+    <h1>BFF 복제 루프 <code>[&lt;,}]</code> 단계 실행기</h1>
+    <p class="lead">BFF 수프 재현 실험에서 2,880 에폭에 1,081개로 두 번째로 많았던 테이프(프로그램 A)를 무작위 바이트로 된 프로그램 B와 이어 붙여 실행합니다. 버튼을 누를 때마다 명령어 하나가 실행되고, PC와 두 헤드, 테이프가 어떻게 바뀌는지 볼 수 있습니다.</p>
+  </header>
+
+  <div class="controls">
+    <button class="primary" id="btnStep">다음 명령어 실행</button>
+    <button id="btnBack">한 단계 되돌리기</button>
+    <button id="btnLap">한 바퀴 실행</button>
+    <button id="btnFull">64바퀴 실행 (사본 완성까지)</button>
+    <button id="btnReset">처음으로</button>
+  </div>
+
+  <div class="regs">
+    <div class="reg"><div class="k">PC (다음에 실행할 위치)</div><div class="v" id="rPC">0</div></div>
+    <div class="reg h0"><div class="k">head0 (쓰는 위치)</div><div class="v" id="rH0">0</div></div>
+    <div class="reg h1"><div class="k">head1 (읽는 위치)</div><div class="v" id="rH1">0</div></div>
+    <div class="reg"><div class="k">완료한 바퀴</div><div class="v" id="rLap">0</div></div>
+    <div class="reg"><div class="k">실행 단계 (상한 8,192)</div><div class="v" id="rSteps">0</div></div>
+  </div>
+
+  <div class="now" aria-live="polite">
+    <div class="k">방금 일어난 일</div>
+    <div class="t" id="nowText">아직 실행하지 않았습니다. PC, head0, head1이 모두 0번에서 시작합니다(<code>bff_noheads</code>).</div>
+  </div>
+
+  <div class="legend">
+    <span><i class="sw pc"></i>PC가 다음에 실행할 칸</span>
+    <span><i class="sw h0"></i>head0</span>
+    <span><i class="sw h1"></i>head1</span>
+    <span><i class="sw w"></i>방금 값이 바뀐 칸</span>
+    <span>굵은 글자는 명령어, 흐린 16진수는 명령어가 아닌 바이트</span>
+  </div>
+
+  <div class="tapes">
+    <section class="A">
+      <div class="region-head"><span><b>프로그램 A</b> · 0–63번 · 복제자</span></div>
+      <div class="grid" id="gridA"></div>
+    </section>
+    <section class="B">
+      <div class="region-head"><span><b>프로그램 B</b> · 64–127번 · 상대 프로그램</span><span class="progress">A를 거꾸로 쓴 사본과 같은 칸 <b id="match">0</b> / 64</span></div>
+      <div class="grid" id="gridB"></div>
+    </section>
+  </div>
+
+  <div class="cols">
+    <div class="panel">
+      <h2>실행 기록</h2>
+      <div class="log" id="log"></div>
+    </div>
+    <div class="panel">
+      <h2>이 루프에 쓰이는 명령어</h2>
+      <table class="ops">
+        <tr><td>[</td><td>head0 칸의 값이 0이면 짝이 되는 <code>]</code> 뒤로 건너뜁니다. 0이 아니면 그냥 다음으로 갑니다.</td></tr>
+        <tr><td>&lt;</td><td>head0을 왼쪽으로 한 칸 옮깁니다. 0번에서 옮기면 127번이 됩니다(테이프는 128칸이 둥글게 이어진 것으로 계산).</td></tr>
+        <tr><td>,</td><td>head1 칸의 값을 head0 칸에 복사합니다.</td></tr>
+        <tr><td>}</td><td>head1을 오른쪽으로 한 칸 옮깁니다.</td></tr>
+        <tr><td>]</td><td>head0 칸의 값이 0이 아니면 짝이 되는 <code>[</code>의 다음 칸으로 돌아갑니다. 0이면 그냥 다음으로 갑니다.</td></tr>
+      </table>
+      <p class="notes" style="margin-top:10px">BFF의 나머지 명령어 <code>&gt; { + - .</code>는 이 루프에서 실행되지 않습니다.</p>
+    </div>
+  </div>
+
+  <div class="notes">
+    <p>명령어가 아닌 바이트도 PC가 지나가며 실행 단계 하나를 씁니다. 이 페이지에서는 그런 칸을 건너뛰고 다음 명령어까지 한 번에 진행하며, 건너뛴 칸 수를 기록에 적습니다. 한 바퀴는 PC가 1번부터 16번까지 지나가는 16단계입니다.</p>
+    <p>A의 명령어 위치는 직접 돌린 재현 실험에서 저장한 수프의 실제 테이프와 같습니다. 명령어가 아닌 바이트의 실제 값은 기록에 없어서, 명령어도 0도 아닌 임의의 값으로 채웠습니다. B는 고정된 난수로 만든 바이트입니다. 이 값들은 루프의 동작에 영향을 주지 않습니다.</p>
+    <p>테이프에 0이 없으면 <code>]</code>에서 반복이 끝나지 않습니다. 실제 실행은 8,192단계(512바퀴)에서 멈추고, 두 테이프는 다시 64바이트씩 나뉘어 수프의 원래 자리로 돌아갑니다. 64바퀴가 지나면 B는 A를 거꾸로 쓴 사본이 되고, 그다음 64바퀴는 B를 읽어 A 위에 다시 거꾸로 쓰므로 A는 원래대로 돌아옵니다.</p>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var N = 128, LIMIT = 8192;
+  var CMDS = "[]+-.,<>{}";
+  var LAYOUT = "[<,··········}··]·<.··.········,·········}·<·]··}··········,<[[·";
+
+  // 결정적 난수 (mulberry32)
+  function rng(seed) {
+    return function () {
+      seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+      var t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+  function isCmd(b) { return CMDS.indexOf(String.fromCharCode(b)) >= 0; }
+  function randNonCmd(r) {
+    var b;
+    do { b = 1 + Math.floor(r() * 255); } while (isCmd(b));
+    return b;
+  }
+
+  function initialTape() {
+    var t = new Uint8Array(N), r = rng(20261005);
+    for (var i = 0; i < 64; i++) {
+      var c = LAYOUT[i];
+      t[i] = c === "·" ? randNonCmd(r) : c.charCodeAt(0);
+    }
+    var r2 = rng(42);
+    for (var j = 64; j < N; j++) t[j] = 1 + Math.floor(r2() * 255);
+    return t;
+  }
+
+  var original = initialTape();
+  var S, history, logLines;
+
+  function fresh() {
+    S = { tape: original.slice(), pc: 0, h0: 0, h1: 0, steps: 0, laps: 0, halted: false, wrote: -1, text: "" };
+    history = [];
+    logLines = [];
+  }
+
+  function snapshot() {
+    return { tape: S.tape.slice(), pc: S.pc, h0: S.h0, h1: S.h1, steps: S.steps, laps: S.laps, halted: S.halted, wrote: S.wrote, text: S.text, logLen: logLines.length };
+  }
+  function restore(s) {
+    S = { tape: s.tape, pc: s.pc, h0: s.h0, h1: s.h1, steps: s.steps, laps: s.laps, halted: s.halted, wrote: s.wrote, text: s.text };
+    logLines.length = s.logLen;
+  }
+
+  function show(b) {
+    return isCmd(b) ? String.fromCharCode(b) : (b === 0 ? "00" : b.toString(16).padStart(2, "0"));
+  }
+  function q(b) { return isCmd(b) ? "'" + String.fromCharCode(b) + "'" : "0x" + b.toString(16).padStart(2, "0"); }
+  function m(x) { return ((x % N) + N) % N; }
+
+  // 명령어 하나를 실행한다. 명령어가 아닌 칸은 건너뛰며 단계 수에 더한다.
+  function stepOne() {
+    if (S.halted) return false;
+    var skipped = 0;
+    S.wrote = -1;
+    while (S.pc < N && !isCmd(S.tape[S.pc])) {
+      S.pc++; S.steps++; skipped++;
+      if (S.steps >= LIMIT) { S.halted = true; S.text = "실행 단계 상한(8,192)에 닿아 멈췄습니다."; return false; }
+    }
+    if (S.pc >= N) { S.halted = true; S.text = "PC가 테이프 끝을 넘어 실행이 끝났습니다."; return false; }
+    var pc = S.pc, c = String.fromCharCode(S.tape[pc]), text = "", lapDone = false;
+    S.h0 = m(S.h0); S.h1 = m(S.h1);
+    switch (c) {
+      case "<": S.h0 = m(S.h0 - 1); text = "<code>&lt;</code> head0을 왼쪽으로 한 칸: " + m(S.h0 + 1) + "번 → " + S.h0 + "번"; break;
+      case ">": S.h0 = m(S.h0 + 1); text = "<code>&gt;</code> head0을 오른쪽으로 한 칸: " + S.h0 + "번"; break;
+      case "{": S.h1 = m(S.h1 - 1); text = "<code>{</code> head1을 왼쪽으로 한 칸: " + S.h1 + "번"; break;
+      case "}": S.h1 = m(S.h1 + 1); text = "<code>}</code> head1을 오른쪽으로 한 칸: " + m(S.h1 - 1) + "번 → " + S.h1 + "번"; break;
+      case "+": S.tape[S.h0] = (S.tape[S.h0] + 1) & 255; S.wrote = S.h0; text = "<code>+</code> head0 칸(" + S.h0 + "번)의 값을 1 늘림"; break;
+      case "-": S.tape[S.h0] = (S.tape[S.h0] + 255) & 255; S.wrote = S.h0; text = "<code>-</code> head0 칸(" + S.h0 + "번)의 값을 1 줄임"; break;
+      case ".": S.tape[S.h1] = S.tape[S.h0]; S.wrote = S.h1; text = "<code>.</code> head0 칸의 값을 head1 칸(" + S.h1 + "번)에 복사"; break;
+      case ",":
+        var before = S.tape[S.h0];
+        S.tape[S.h0] = S.tape[S.h1]; S.wrote = S.h0;
+        text = "<code>,</code> head1 칸(" + S.h1 + "번)의 값 <code>" + q(S.tape[S.h1]) + "</code>을 head0 칸(" + S.h0 + "번)에 복사. " + S.h0 + "번은 <code>" + q(before) + "</code> → <code>" + q(S.tape[S.h0]) + "</code>";
+        break;
+      case "[":
+        if (S.tape[S.h0] === 0) {
+          var depth = 1, p = pc + 1;
+          for (; p < N && depth > 0; p++) { var cc = String.fromCharCode(S.tape[p]); if (cc === "]") depth--; if (cc === "[") depth++; }
+          p--;
+          if (depth !== 0) { S.pc = N; S.steps++; S.halted = true; S.text = "짝이 되는 ]가 없어 실행이 끝났습니다."; return false; }
+          S.pc = p;
+          text = "<code>[</code> head0 칸(" + S.h0 + "번)이 0이므로 " + p + "번의 <code>]</code> 뒤로 건너뜀";
+        } else {
+          text = "<code>[</code> head0 칸(" + S.h0 + "번)의 값 <code>" + q(S.tape[S.h0]) + "</code>이 0이 아니므로 루프 안으로 들어감";
+        }
+        break;
+      case "]":
+        if (S.tape[S.h0] !== 0) {
+          var d = 1, k = pc - 1;
+          for (; k >= 0 && d > 0; k--) { var c2 = String.fromCharCode(S.tape[k]); if (c2 === "]") d++; if (c2 === "[") d--; }
+          k++;
+          if (d !== 0) { S.halted = true; S.steps++; S.text = "짝이 되는 [가 없어 실행이 끝났습니다."; return false; }
+          S.pc = k;
+          lapDone = true;
+          text = "<code>]</code> head0 칸(" + S.h0 + "번)의 값 <code>" + q(S.tape[S.h0]) + "</code>이 0이 아니므로 " + k + "번 <code>[</code>의 다음 칸(" + (k + 1) + "번)으로 돌아감";
+        } else {
+          text = "<code>]</code> head0 칸(" + S.h0 + "번)이 0이므로 루프를 빠져나감";
+        }
+        break;
+    }
+    S.pc++; S.steps++;
+    if (lapDone) S.laps++;
+    if (skipped) text = "명령어가 아닌 칸 " + skipped + "개를 건너뜀. " + text;
+    S.text = text;
+    logLines.push({ cls: "", s: "PC " + String(pc).padStart(3, " ") + "  " + text.replace(/<[^>]+>/g, "") });
+    if (lapDone) logLines.push({ cls: "lap", s: "── " + S.laps + "바퀴 완료 ──" });
+    if (S.steps >= LIMIT) { S.halted = true; S.text += " 실행 단계 상한(8,192)에 닿아 멈췄습니다."; }
+    return true;
+  }
+
+  function matchCount() {
+    var n = 0;
+    for (var i = 0; i < 64; i++) if (S.tape[127 - i] === original[i]) n++;
+    return n;
+  }
+
+  var gridA = document.getElementById("gridA"), gridB = document.getElementById("gridB"), cells = [];
+  for (var i = 0; i < N; i++) {
+    var el = document.createElement("div");
+    el.className = "cell";
+    el.innerHTML = '<span class="idx">' + i + '</span><span class="val"></span>';
+    (i < 64 ? gridA : gridB).appendChild(el);
+    cells.push(el);
+  }
+
+  function render() {
+    var pcShow = S.pc;
+    if (!S.halted) { while (pcShow < N && !isCmd(S.tape[pcShow])) pcShow++; }
+    for (var i = 0; i < N; i++) {
+      var b = S.tape[i], el = cells[i];
+      el.querySelector(".val").textContent = show(b);
+      el.className = "cell " + (isCmd(b) ? "cmd" : "non") +
+        (i === m(S.h0) ? " isH0" : "") + (i === m(S.h1) ? " isH1" : "") +
+        (!S.halted && i === pcShow ? " isPC" : "") + (i === S.wrote ? " wrote" : "");
+      el.title = i + "번: " + q(b);
+    }
+    document.getElementById("rPC").textContent = S.halted ? "끝" : String(pcShow);
+    document.getElementById("rH0").textContent = m(S.h0);
+    document.getElementById("rH1").textContent = m(S.h1);
+    document.getElementById("rLap").textContent = S.laps;
+    document.getElementById("rSteps").textContent = S.steps.toLocaleString("ko-KR");
+    document.getElementById("match").textContent = matchCount();
+    document.getElementById("nowText").innerHTML = S.text || "아직 실행하지 않았습니다. PC, head0, head1이 모두 0번에서 시작합니다(<code>bff_noheads</code>).";
+    var log = document.getElementById("log");
+    var start = Math.max(0, logLines.length - 300);
+    log.innerHTML = logLines.slice(start).map(function (l) {
+      return '<div class="' + l.cls + '">' + l.s.replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</div>";
+    }).join("");
+    log.scrollTop = log.scrollHeight;
+    document.getElementById("btnBack").disabled = history.length === 0;
+    ["btnStep", "btnLap", "btnFull"].forEach(function (id) { document.getElementById(id).disabled = S.halted; });
+  }
+
+  function act(fn) { history.push(snapshot()); if (history.length > 2000) history.shift(); fn(); render(); }
+
+  document.getElementById("btnStep").addEventListener("click", function () { act(stepOne); });
+  document.getElementById("btnLap").addEventListener("click", function () {
+    act(function () { var target = S.laps + 1; var g = 0; while (!S.halted && S.laps < target && g++ < 1000) stepOne(); });
+  });
+  document.getElementById("btnFull").addEventListener("click", function () {
+    act(function () { var g = 0; while (!S.halted && S.laps < 64 && g++ < 20000) stepOne(); });
+  });
+  document.getElementById("btnBack").addEventListener("click", function () {
+    if (!history.length) return; restore(history.pop()); render();
+  });
+  document.getElementById("btnReset").addEventListener("click", function () { fresh(); render(); });
+
+  fresh();
+  render();
+})();
+</script>
+
+</body>
+</html>
